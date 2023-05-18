@@ -1,0 +1,1232 @@
+/******************************************************************************
+*
+* Copyright (C) 2009 - 2014 Xilinx, Inc. All rights reserved.
+*
+* Permission is hereby granted, free of charge, to any person obtaining a copy
+* of this software and associated documentation files (the "Software"), to deal
+* in the Software without restriction, including without limitation the rights
+* to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+* copies of the Software, and to permit persons to whom the Software is
+* furnished to do so, subject to the following conditions:
+*
+* The above copyright notice and this permission notice shall be included in
+* all copies or substantial portions of the Software.
+*
+* Use of the Software is limited solely to applications:
+* (a) running on a Xilinx device, or
+* (b) that interact with a Xilinx device through a bus or interconnect.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+* XILINX BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+* WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
+* OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+* SOFTWARE.
+*
+* Except as contained in this notice, the name of the Xilinx shall not be used
+* in advertising or otherwise to promote the sale, use or other dealings in
+* this Software without prior written authorization from Xilinx.
+*
+******************************************************************************/
+/*
+* helloworld.c: simple test application
+*
+* This application configures UART 16550 to baud rate 9600.
+* PS7 UART (Zynq) is not initialized by this application, since
+* bootrom/bsp configures it to baud rate 115200
+*
+* ------------------------------------------------
+* | UART TYPE BAUD RATE |
+* ------------------------------------------------
+* uartns550 9600
+* uartlite Configurable only in HW design
+* ps7_uart 115200 (configured by bootrom/bsp)
+*/
+#include <stdio.h>
+#include "platform.h"
+#include "xil_printf.h"
+#include "gpio.h"
+#include "xparameters.h"
+
+
+#define s0 0
+#define s1 1
+#define s2 2
+#define s3 3
+#define s4 4
+#define s5 5
+#define s6 6
+#define right 254
+#define left 253
+#define up 247
+#define down 251
+#define a 127
+#define b 191
+#define select 239
+#define start 223
+#define game_character 0
+#define enemy1 1
+#define enemy2 2
+#define enemy3 3
+#define boss 4
+#define bullet 5
+
+int joy;
+int upper_limit = 0;
+
+
+// Define the platform struct
+typedef struct {
+    int sprite_number;
+    int start_col,start_row;
+    int row_size;
+    int col_size;
+} platform;
+
+// To store data of character and enemies
+typedef struct
+{
+  int upper_left_sprite;
+  int bottom_left_sprite;
+  int upper_right_sprite;
+  int bottom_right_sprite;
+  int upper_right_col, upper_right_row; // upper right pixel of character or enemies
+  int jump;
+  int direction;
+  int distance;
+  int range;
+} game_objects_data;
+
+
+#define red 4 // : std_logic_vector(3 downto 0) := "0100";
+#define grn 2 // : std_logic_vector(3 downto 0) := "0010";
+#define blu 1 // : std_logic_vector(3 downto 0) := "0001";
+#define clr 8 // : std_logic_vector(3 downto 0) := "1000";
+#define blk 0 // "0000"
+#define cyn 3 // "0011"
+#define mag 5 // "0101"
+#define yel 6 // "0110"
+#define wht 7 // "0111"
+
+
+int wesprite = 1;
+int weback = 2;
+int wefore = 4;
+
+
+int backtilemap[1200]; /* = {
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1,
+s1, s1, s1, s1, s1, s1, s1, s1, s1, s1, s1
+};*/
+int foretilemap[1200];/* = {
+s2, s2, s3, s2, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3,
+s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3, s0,
+s2, s3, s0, s2, s3, s0, s2, s3, s0, s2, s3
+};*/
+
+
+int spritemap[] = {
+		//Sprite 0
+		clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr,
+		clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr,
+		clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr,
+		clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr,
+		clr,
+
+		//Sprite 1
+		blk,blk,blk,blk,blk,blk,blk,blk,
+		blk,blk,blk,blk,blk,blk,blk,blk,
+		blk,blk,red,red,red,red,blk,blk,
+		blk,blk,red,red,red,red,blk,blk,
+		blk,blk,red,red,red,red,blk,blk,
+		blk,blk,red,red,red,red,blk,blk,
+		blk,blk,blk,blk,blk,blk,blk,blk,
+		blk,blk,blk,blk,blk,blk,blk,blk,
+
+		//Sprite 2
+		grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn,
+		grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn,
+		grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn,
+		grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn,
+		grn,
+
+		//Sprite 3
+		wht,wht,wht,wht,wht,wht,wht,wht,
+		wht,wht,wht,wht,wht,wht,wht,wht,
+		wht,wht,wht,wht,wht,wht,wht,wht,
+		wht,wht,wht,wht,wht,wht,wht,wht,
+		wht,wht,wht,wht,wht,wht,wht,wht,
+		wht,wht,wht,wht,wht,wht,wht,wht,
+		wht,wht,wht,wht,wht,wht,wht,wht,
+		wht,wht,wht,wht,wht,wht,wht,wht,
+
+		//Sprite 4  foundation
+		blk,blk,blk,blk,blk,blk,blk,blk,
+		red,red,red,red,red,red,red,red,
+		red,red,red,red,red,red,red,red,
+		blk,blk,blk,blk,blk,blk,blk,blk,
+		blk,blk,blk,blk,blk,blk,blk,blk,
+		red,red,red,red,red,red,red,red,
+		red,red,red,red,red,red,red,red,
+		blk,blk,blk,blk,blk,blk,blk,blk,
+
+		//Sprite 5  brickss
+		blk,blk,blk,blk,blk,blk,blk,blk,
+		blk,red,red,red,red,red,red,blk,
+		blk,red,blk,blk,blk,blk,red,blk,
+		blk,red,blk,wht,wht,blk,red,blk,
+		blk,red,blk,wht,wht,blk,red,blk,
+		blk,red,blk,blk,blk,blk,red,blk,
+		blk,red,red,red,red,red,red,blk,
+		blk,blk,blk,blk,blk,blk,blk,blk,
+
+		//Sprite 6
+		grn,grn,grn,grn,grn,grn,grn,grn,
+		grn,grn,grn,blk,blk,grn,grn,grn,
+		grn,grn,blk,grn,grn,blk,grn,grn,
+		grn,blk,grn,grn,grn,grn,blk,grn,
+		grn,grn,blk,grn,grn,blk,grn,grn,
+		grn,grn,grn,grn,grn,grn,grn,grn,
+		blk,blk,blk,blk,blk,blk,blk,blk,
+		blk,blk,blk,blk,blk,blk,blk,blk,
+
+		//Sprite 7
+		cyn,cyn,cyn,cyn,cyn,cyn,cyn,cyn,
+		cyn,cyn,cyn,cyn,cyn,cyn,cyn,cyn,
+		cyn,cyn,cyn,cyn,cyn,cyn,cyn,cyn,
+		cyn,cyn,cyn,cyn,cyn,cyn,cyn,cyn,
+		cyn,cyn,cyn,cyn,cyn,cyn,cyn,cyn,
+		cyn,cyn,cyn,cyn,cyn,cyn,cyn,cyn,
+		cyn,cyn,cyn,cyn,cyn,cyn,cyn,cyn,
+		cyn,cyn,cyn,cyn,cyn,cyn,cyn,cyn,
+
+		//Sprite 8
+		blk,blk,blk,blk,blk,blk,blk,blk,
+		blk,blk,blk,blk,blk,blk,blk,blk,
+		blk,blk,blk,blk,blk,blk,blk,blk,
+		blk,blk,blk,blk,blk,blk,blk,blk,
+		blk,blk,blk,blk,blk,blk,blk,blk,
+		blk,blk,blk,blk,blk,blk,blk,blk,
+		blk,blk,blk,blk,blk,blk,blk,blk,
+		blk,blk,blk,blk,blk,blk,blk,blk,
+
+
+		//Sprite 9 Enemy 1
+		wht,wht,blu,wht,wht,blu,wht,wht,
+		wht,wht,wht,blu,blu,wht,wht,wht,
+		wht,wht,blu,red,red,blu,wht,blu,
+		blu,blu,blk,wht,wht,blk,blu,blu,
+		blu,wht,blu,blk,blk,blu,wht,wht,
+		wht,wht,wht,blu,blu,wht,wht,wht,
+		wht,wht,blu,wht,wht,blu,wht,wht,
+		wht,blu,wht,wht,wht,wht,blu,wht,
+
+		//Sprite 10 Enemy 2
+		wht,wht,wht,blu,blu,wht,wht,wht,
+		wht,wht,blu,blu,blu,blu,wht,wht,
+		wht,blu,red,blu,blu,red,blu,wht,
+		blu,blu,blu,blu,blu,blu,blu,blu,
+		blu,wht,blu,blk,blk,blu,wht,blu,
+		wht,wht,wht,blu,blu,wht,wht,wht,
+		wht,wht,blu,wht,wht,blu,wht,wht,
+		wht,blu,wht,wht,wht,wht,blu,wht,
+
+		//Sprite 11 Yellow Entrance /Exit
+		yel,yel,yel,yel,yel,yel,yel,yel,
+		yel,yel,yel,yel,yel,yel,yel,yel,
+		yel,yel,yel,yel,yel,yel,yel,yel,
+		yel,yel,yel,yel,yel,yel,yel,yel,
+		yel,yel,yel,yel,yel,yel,yel,yel,
+		yel,yel,yel,yel,yel,yel,yel,yel,
+		yel,yel,yel,yel,yel,yel,yel,yel,
+		yel,yel,yel,yel,yel,yel,yel,yel,
+
+		//Sprite 12 fish
+		cyn,cyn,cyn,cyn,cyn,cyn,cyn,cyn,
+		mag,cyn,cyn,cyn,mag,cyn,cyn,cyn,
+		cyn,mag,cyn,mag,mag,mag,cyn,cyn,
+		cyn,cyn,mag,cyn,cyn,blk,mag,cyn,
+		cyn,cyn,yel,cyn,cyn,cyn,blk,cyn,
+		cyn,mag,cyn,mag,mag,mag,wht,cyn,
+		mag,cyn,cyn,cyn,mag,cyn,cyn,cyn,
+		cyn,cyn,cyn,cyn,cyn,cyn,cyn,cyn,
+
+		// sprite 13
+		blk,red,blk,wht,blk,wht,red,wht,
+		red,wht,red,blk,wht,red,wht,red,
+		blk,red,blk,wht,blk,wht,red,wht,
+		wht,blk,wht,blk,wht,blk,wht,blk,
+		blk,wht,blk,wht,blk,wht,blk,wht,
+		wht,red,wht,blk,wht,blk,red,blk,
+		red,wht,red,wht,blk,red,wht,red,
+		blk,blk,blk,blk,blk,blk,blk,blk,
+
+		// the following four sprites are for the character in clockwise direction s3 to s6
+		// sprite 14
+		clr,clr,clr,clr,clr,clr,red,red,
+		clr,clr,clr,clr,clr,red,red,red,
+		clr,clr,clr,clr,clr,blk,blk,blk,
+		clr,clr,clr,clr,blk,cyn,blk,cyn,
+		clr,clr,clr,clr,blk,cyn,blk,blk,
+		clr,clr,clr,clr,blk,blk,cyn,cyn,
+		clr,clr,clr,clr,clr,cyn,cyn,cyn,
+		clr,clr,clr,clr,clr,red,blu,red,
+
+		// sprite 15
+		red,red,clr,clr,clr,clr,clr,clr,
+		red,red,red,red,clr,clr,clr,clr,
+		cyn,cyn,clr,clr,clr,clr,clr,clr,
+		cyn,blk,cyn,clr,clr,clr,clr,clr,
+		cyn,cyn,blk,clr,clr,clr,clr,clr,
+		cyn,blk,blk,blk,clr,clr,clr,clr,
+		cyn,cyn,cyn,clr,clr,clr,clr,clr,
+		red,red,clr,clr,clr,clr,clr,clr,
+
+		// sprite 16
+		blu,red,red,clr,clr,clr,clr,clr,
+		blu,red,red,red,clr,clr,clr,clr,
+		yel,blu,red,cyn,clr,clr,clr,clr,
+		blu,blu,cyn,cyn,clr,clr,clr,clr,
+		blu,blu,blu,cyn,clr,clr,clr,clr,
+		blu,blu,blu,clr,clr,clr,clr,clr,
+		clr,red,yel,clr,clr,clr,clr,clr,
+		clr,red,red,red,clr,clr,clr,clr,
+
+		// sprite 17
+		clr,clr,clr,clr,red,red,blu,red,
+		clr,clr,clr,red,red,red,blu,red,
+		clr,clr,clr,cyn,red,blu,yel,blu,
+		clr,clr,clr,cyn,cyn,blu,blu,blu,
+		clr,clr,clr,cyn,blu,blu,blu,blu,
+		clr,clr,clr,clr,blu,blu,blu,blu,
+		clr,clr,clr,clr,yel,red,clr,clr,
+		clr,clr,clr,red,red,red,clr,clr,
+
+		// sprite 18
+		blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu,
+		clr, blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu,
+		clr, blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu,
+		clr, blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu,
+		clr,
+
+		// sprite 19 bullet
+		wht,wht,wht,red,red,wht,wht,wht,
+		wht,wht,red,wht,wht,red,wht,wht,
+		wht,red,wht,blk,blk,wht,red,wht,
+		red,wht,blk,red,red,blk,wht,red,
+		red,wht,blk,red,red,blk,wht,red,
+		wht,red,wht,blk,blk,wht,red,wht,
+		wht,wht,red,wht,wht,red,wht,wht,
+		wht,wht,wht,red,red,wht,wht,wht,
+
+		// sprite 20 boss upper left
+		wht,wht,wht,wht,wht,wht,red,red,
+		wht,wht,wht,wht,wht,red,red,red,
+		wht,wht,wht,wht,red,red,red,red,
+		wht,wht,wht,blk,blk,red,red,red,
+		wht,wht,red,red,mag,blk,red,red,
+		wht,red,red,red,mag,blk,blk,blk,
+		wht,red,red,red,mag,blk,mag,red,
+		red,red,red,red,mag,mag,mag,red,
+
+		// sprite 21 boss upper right
+		red,red,wht,wht,wht,wht,wht,wht,
+		red,red,red,wht,wht,wht,wht,wht,
+		red,red,red,red,wht,wht,wht,wht,
+		red,red,red,blk,blk,wht,wht,wht,
+		red,red,blk,mag,red,red,wht,wht,
+		blk,blk,blk,mag,red,red,red,wht,
+		red,mag,blk,mag,red,red,red,wht,
+		red,mag,mag,mag,red,red,red,red,
+
+		// sprite 22 boss lower right
+		red,red,red,red,red,red,red,red,
+		mag,mag,mag,red,red,red,red,wht,
+		mag,mag,mag,mag,wht,wht,wht,wht,
+		mag,mag,mag,mag,wht,wht,wht,wht,
+		mag,mag,mag,mag,wht,wht,wht,wht,
+		mag,mag,mag,blk,blk,wht,wht,wht,
+		wht,blk,blk,blk,blk,wht,wht,wht,
+		wht,blk,blk,blk,wht,wht,wht,wht,
+
+
+		// sprite 23 boss lower left
+		red,red,red,red,red,red,red,red,
+		wht,red,red,red,red,mag,mag,mag,
+		wht,wht,wht,wht,mag,mag,mag,mag,
+		wht,wht,wht,wht,mag,mag,mag,mag,
+		wht,wht,blk,blk,mag,mag,mag,mag,
+		wht,blk,blk,blk,blk,blk,mag,mag,
+		wht,blk,blk,blk,blk,blk,blk,wht,
+		wht,wht,wht,blk,blk,blk,blk,wht,
+
+		// sprite 24 stationary enemy upper left
+		wht,wht,wht,wht,red,red,wht,wht,
+		wht,wht,wht,wht,red,red,red,red,
+		wht,wht,wht,wht,red,red,red,red,
+		wht,wht,wht,wht,blk,mag,mag,wht,
+		wht,wht,wht,wht,red,blk,blk,wht,
+		wht,wht,wht,wht,red,wht,mag,red,
+		wht,wht,wht,wht,red,mag,red,red,
+		wht,wht,wht,wht,red,red,red,blk,
+
+
+		// sprite 25 stationary enemy upper right
+		wht,wht,red,red,wht,wht,wht,wht,
+		red,red,red,red,wht,wht,wht,wht,
+		red,red,red,red,wht,wht,wht,wht,
+		wht,mag,mag,blk,wht,wht,wht,wht,
+		wht,blk,blk,red,wht,wht,wht,wht,
+		red,mag,red,red,wht,wht,wht,wht,
+		red,red,mag,red,wht,wht,wht,wht,
+		blk,red,red,red,wht,wht,wht,wht,
+
+
+		// sprite 26 stationary enemy lower left
+		red,red,red,wht,wht,wht,wht,wht,
+		red,red,yel,red,wht,wht,wht,wht,
+		wht,yel,red,red,red,red,wht,wht,
+		yel,wht,red,red,red,red,wht,wht,
+		red,red,red,red,wht,wht,wht,wht,
+		red,red,red,red,wht,wht,wht,wht,
+		red,red,red,red,wht,wht,wht,wht,
+		blk,blk,red,red,blk,blk,wht,wht,
+
+
+		// sprite 27 stationary enemy lower right
+		wht,wht,wht,wht,wht,red,red,red,
+		wht,wht,wht,wht,red,yel,red,red,
+		wht,wht,red,red,red,red,yel,wht,
+		wht,wht,red,red,red,red,wht,yel,
+		wht,wht,wht,wht,red,red,red,red,
+		wht,wht,wht,wht,red,red,red,red,
+		wht,wht,wht,wht,red,red,red,red,
+		wht,wht,blk,blk,red,red,blk,blk,
+		clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr,
+		clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr,
+		clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr,
+		clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr, clr,
+		clr,
+		grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn,
+		grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn,
+		grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn,
+		grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn, grn,
+		grn,
+		blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu,
+		clr, blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu,
+		clr, blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu,
+		clr, blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu, clr, blu,
+		clr,
+		clr, clr, red, red, red, red, clr, clr, clr, clr, red, red, red, red, clr,
+		clr, clr, clr, red, red, red, red, clr, clr, clr, clr, red, red, red, red, clr,
+		clr, clr, clr, red, red, red, red, clr, clr, clr, clr, red, red, red, red, clr,
+		clr, clr, clr, red, red, red, red, clr, clr, clr, clr, red, red, red, red, clr, clr
+		};
+
+// Create a 7x25 2D array of platform structs
+platform platforms[8][25] = {
+    {
+        {3, 0, 0, 30, 40},
+		{3, 0, 0, 30, 40},
+		{3, 0, 0, 30, 40},
+		{3, 0, 0, 30, 40},
+		{3, 0, 0, 30, 40},
+        {3, 0, 0, 30, 40},
+        {3, 0, 0, 30, 40},
+		{3, 0, 0, 30, 40},
+		{3, 0, 0, 30, 40},
+		{3, 0, 0, 30, 40},
+		{3, 0, 0, 30, 40},
+		{3, 0, 0, 30, 40},
+		{3, 0, 0, 30, 40},
+		{3, 0, 0, 30, 40},
+		{3, 0, 0, 30, 40},
+		{3, 0, 0, 30, 40},
+		{3, 0, 0, 30, 40},
+		{3, 0, 0, 30, 40},
+		{3, 0, 0, 30, 40},
+        {3, 0, 0, 30, 40}
+    },
+	{
+	        {0, 0, 0, 30, 40},
+			{0, 0, 0, 30, 40},
+			{0, 0, 0, 30, 40},
+			{0, 0, 0, 30, 40},
+			{0, 0, 0, 30, 40},
+	        {0, 0, 0, 30, 40},
+	        {0, 0, 0, 30, 40},
+			{0, 0, 0, 30, 40},
+			{0, 0, 0, 30, 40},
+			{0, 0, 0, 30, 40},
+			{0, 0, 0, 30, 40},
+			{0, 0, 0, 30, 40},
+			{0, 0, 0, 30, 40},
+			{0, 0, 0, 30, 40},
+			{0, 0, 0, 30, 40},
+			{0, 0, 0, 30, 40},
+			{0, 0, 0, 30, 40},
+			{0, 0, 0, 30, 40},
+			{0, 0, 0, 30, 40},
+	        {0, 0, 0, 30, 40}
+	    },
+    {    //platform for level 2
+    		{s1, 0, 0, 1, 40}, //row on top
+    		{6, 24, 24, 1, 3}, // step2
+		{4, 12, 20, 1, 4}, // floor in house
+		{s1, 9, 23, 2, 1}, // wall in house down
+    		{s1, 39, 0, 13, 1}, // right wall up
+		{s1, 5, 18, 2, 3}, // wall in house
+		{6, 36, 18, 1, 3}, // last step
+		{6, 28, 22, 1, 3}, // step5
+		{6, 32, 20, 1, 2}, // step6
+		{6, 22, 21, 1, 1}, // step single
+		{11, 39, 13, 5, 1}, // Exit yellow color
+    		{4, 3, 25, 2, 15}, //house foundation
+		{7, 0, 27, 3, 40}, //water
+		{12, 10, 28, 1, 1}, // fish in water
+		{12, 27, 28, 1, 1}, // fish in water
+		{12, 33, 28, 1, 1}, // fish in water
+		{s1, 4, 27, 3, 1},  // found wall left
+		{s1, 16, 27, 3, 1},  // found wall left
+		{s1, 4, 15, 10, 1}, // house wall left
+		{s1, 16, 15, 7, 1}, // house wall right
+		{5, 3, 11, 4, 15}, //Roof
+		{6, 20, 26, 1, 3}, //step 3
+		{8, 20, 27, 3, 3}, //step 3
+		{s1, 0, 0, 30, 1}, //left wall
+		{s1, 39, 18, 12, 1} //right wall down
+    },
+{      //platform for level 3
+			{s1, 0, 0, 1, 40}, //row on top
+			{s1, 7, 8, 2, 13}, // Wall in the air
+			{s1, 35, 19, 1, 4}, //wall for exit grass
+			{s1, 39, 1, 5, 1}, // up right wall
+			{s1, 0, 0, 13, 1}, // left wall up
+			{6, 31, 10, 1, 2}, // grass 5
+			{6, 36, 12, 1, 4}, // grass 4
+			{6, 26, 15, 1, 4}, // grass 3
+			{6, 35, 18, 1, 4}, // grass 2
+			{11, 39, 6, 6, 1}, // Exit yellow color
+			{7, 0, 27, 3, 40}, //water
+			{12, 16, 28, 1, 1}, // fish in water
+			{12, 4, 28, 1, 1}, // fish in water
+			{12, 35, 28, 1, 1}, // fish in water
+			{s1, 39, 13, 17, 1}, // down right wall
+			{s1, 29, 21, 9, 3}, //solid ground in water 3
+			{6, 25, 23, 1, 2}, // grass step 2
+			{8, 25, 24, 9, 2}, // grass black step 2
+			{6, 14, 26, 1, 3}, // grass 1
+			{s1, 10, 24, 6, 2}, //solid ground in water 2
+			{s1, 6, 21, 9, 2}, //solid ground in water 1
+			{6, 20, 26, 1, 3}, // grass step 1
+			{8, 20, 27, 3, 3}, // grass black step 1
+			{s1, 25, 0, 16, 1}, //right wall
+			{s1, 0, 18, 12, 3} //left wall down
+    },
+	{  //platform for level 4
+			{s1, 0, 0, 1, 40}, //row on top
+			{s1, 7, 8, 2, 13}, // Wall in the air
+			{6, 29, 21, 1, 4}, //wall for exit grass
+			{s1, 29, 22, 4, 4}, //solid ground in water 2
+			{s1, 0, 1, 5, 1}, // up left wall
+			{s1, 33, 0, 11, 7}, // right wall up
+			{6, 0, 12, 1, 4}, // grass for entrance
+			{6, 33, 17, 1, 7}, // grass for exit
+			{11, 39, 11, 6, 1}, // Exit yellow color
+			{7, 0, 26, 4, 40}, //water
+			{12, 7, 28, 1, 1}, // fish in water
+			{12, 14, 27, 1, 1}, // fish in water
+			{12, 30, 28, 1, 1}, // fish in water
+			{6, 10, 25, 1, 3}, // grass 5
+			{s1, 10, 26, 4, 3}, //solid ground in water 5
+			{6, 15, 25, 1, 3}, // grass 4
+			{s1, 15, 26, 4, 3}, //solid ground in water 4
+			{6, 20, 25, 1, 3}, // grass 3
+			{s1, 20, 26, 4, 3}, //solid ground in water 3
+			{6, 6, 22, 1, 1}, // grass 1
+			{6, 25, 25, 1, 3}, // grass 2
+			{s1, 25, 26, 4, 3}, //solid ground in water 2
+			{s1, 25, 0, 5, 1}, //middle wall
+			{s1, 0, 13, 17, 4}, // down left wall
+			{s1, 33, 18, 12, 7} //right wall down
+	    },
+	{
+	//platform for level 5
+				{s1, 0, 0, 1, 40}, //row on top
+				{s1, 14, 23, 2, 13}, // Wall in the air close to water
+				{6, 14, 22, 1, 13}, // grass on Wall in the air close to water
+				{s1, 33, 1, 5, 7}, // up right wall
+				{11, 39, 6, 16, 1}, // Exit yellow color
+				{s1, 0, 0, 11, 7}, // left wall up
+				{6, 30, 17, 1, 3}, // grass on down right wall first
+				{s1, 30, 18, 1, 3}, // wall with down right wall first
+				{7, 0, 26, 4, 40}, //water
+				{12, 9, 29, 1, 1}, // fish in water
+				{12, 16, 29, 1, 1}, // fish in water
+				{12, 9, 26, 1, 1}, // fish in water
+				{12, 30, 26, 1, 1}, // fish in water
+
+				{12, 9, 29, 1, 1}, // fish in water
+				{12, 12, 27, 1, 1}, // fish in water
+				{12, 30, 28, 1, 1}, // fish in water
+				{12, 20, 26, 1, 1}, // fish in water
+				{12, 25, 27, 1, 1}, // fish in water
+				{12, 30, 28, 1, 1}, // fish in water
+				{6, 36, 22, 1, 4}, // grass on down right wall second small
+				{s1, 36, 23, 7, 4}, // down right wall second small
+				{6, 33, 12, 1, 3}, // grass on down right wall first
+				{s1, 33, 13, 17, 3}, // down right wall first
+				{6, 0, 17, 1, 8}, // grass on left wall down
+				{s1, 0, 18, 12, 8} //left wall down
+ },
+  {
+		//platform for level 6
+					{s1, 0, 0, 1, 40}, //row on top
+					{s1, 7, 23, 2, 10}, // Wall in the air close to water
+					{6, 7, 22, 1, 10}, // grass on Wall in the air close to water
+					{s1, 0, 1, 5, 7}, // up left wall
+					{11, 39, 21, 4, 1}, // Exit yellow color
+					{s1, 35, 0, 21, 5}, // right wall up
+					{7, 0, 26, 4, 40}, //water
+					{12, 9, 29, 1, 1}, // fish in water
+					{12, 16, 29, 1, 1}, // fish in water
+					{12, 9, 26, 1, 1}, // fish in water
+					{12, 9, 29, 1, 1}, // fish in water
+					{12, 12, 27, 1, 1}, // fish in water
+					{6, 28, 14, 1, 3}, // grass on down right wall first
+					{s1, 28, 15, 17, 3}, // wall with down right wall first
+					{6, 22, 18, 1, 2}, // grass step 2
+					{s1, 22, 19, 11, 2}, // grass black step 2
+					{6, 19, 20, 1, 2}, // grass step 1
+					{4, 19, 21, 9, 2}, // grass black step 1
+					{6, 25, 16, 1, 2}, // grass step 3
+					{4, 25, 17, 14, 2}, // grass black step 3
+					{6, 0, 22, 1, 4}, // grass on down left wall second small
+					{s1, 0, 23, 7, 4}, // down left wall second small
+					{s1, 10, 8, 1, 13}, // Wall in the air
+					{6, 32, 25, 1, 8}, // grass on right wall down
+					{s1, 32, 26, 4, 8} //right wall down
+	 },
+	{
+			//platform for level 7
+					{13, 0, 0, 1, 40}, //row on top
+					{13, 14, 8, 2, 13}, // Wall in the air close to water
+					{6, 14, 7, 1, 13}, // grass on Wall in the air close to water
+					{13, 39, 1, 5, 1}, // up right wall
+//					{11, 39, 6, 16, 1}, // Exit yellow color
+					{13, 0, 0, 5, 1}, // left wall up
+//					{6, 30, 17, 1, 3}, // grass on down right wall first
+//					{13, 30, 18, 1, 3}, // wall with down right wall first
+					{7, 0, 27, 3, 40}, //water
+//					{12, 9, 29, 1, 1}, // fish in water
+					{12, 16, 29, 1, 1}, // fish in water
+					{12, 7, 29, 1, 1}, // fish in water
+					{12, 12, 28, 1, 1}, // fish in water
+					{12, 30, 28, 1, 1}, // fish in water
+//					{12, 20, 26, 1, 1}, // fish in water
+					{12, 25, 29, 1, 1}, // fish in water
+					{12, 30, 28, 1, 1}, // fish in water
+
+					{13, 28, 15, 4, 1}, // Tank left
+					{13, 34, 15, 4, 1}, //Tank right
+					{13, 28, 19, 1, 7}, //Tank bottom
+					{7, 29, 17, 2, 5}, // Tank water
+					{12, 31, 17, 1, 1}, // fish in tank
+
+					{6, 39, 25, 1, 1}, // grass on right wall down
+					{13, 39, 26, 4, 1}, //right wall down
+					{6, 0, 25, 1, 1}, // grass on right wall down
+					{13, 0, 26, 4, 1} //left wall down
+	 }
+
+};
+
+// creating the character and enemies
+game_objects_data game_objects_datas[6] = {
+
+	 //character
+     {14, 17, 15, 16, 7, 16, 7, 1, 0, 0},
+	 // enemy #1
+     {0, 0, 0, 9, 7, 1, 1, 1, 0, 5},
+	 // enemy #2
+     {0, 0, 0, 10, 7, 20, 0, 1, 0, 3},
+	 // enemy #3
+	 {24, 27, 25, 26, 26, 2, 0, 1, 0, 5},
+	 // boss
+	 {20, 23, 21, 22, 3, 3, 0, 1, 0, 5},
+	 // bullet
+     {0, 19, 0, 0, 0, 0, 0, 0, 0, 0}
+
+
+  };
+
+int current_jump = 0;
+// function to fill the passed tile map
+void draw_platform_variables(int level, platform platforms[][25], int tilemap[]){
+
+	int number_of_platforms = sizeof(platforms[0])/sizeof(platforms[0][0]);// calculates the number of platforms in a level
+   for (int k = 0; k < number_of_platforms; k++){
+	 int starting_row = platforms[level][k].start_row;
+	 int starting_col = platforms[level][k].start_col;
+	 int number_of_cols = platforms[level][k].col_size;
+	 int number_of_rows = platforms[level][k].row_size;
+
+	 for (int i = starting_row; i < starting_row + number_of_rows; i++) {
+	        for (int j = starting_col; j <starting_col + number_of_cols; j++) {
+
+                int index = 40*i + j; // from 2d to 1d
+	        	tilemap[index] = platforms[level][k].sprite_number;
+
+	        }
+
+	    }
+
+   }
+}
+
+
+// function to move the draw tile maps to the registers to be read by the fpga board
+void move_tiles_to_fpga(int spritemap[], int foretilemap[], int backtilemap[]){
+XGpio_WriteReg(XPAR_VGA_IP_0_S00_AXI_BASEADDR, 0, 0); //set we all off
+for (int x=0; x<2048; x++)
+{
+XGpio_WriteReg(XPAR_VGA_IP_0_S00_AXI_BASEADDR, 1*4 , x); //set address
+XGpio_WriteReg(XPAR_VGA_IP_0_S00_AXI_BASEADDR, 2*4 , spritemap[x]); //set data
+
+XGpio_WriteReg(XPAR_VGA_IP_0_S00_AXI_BASEADDR, 0, wesprite); //write to spritemap
+
+XGpio_WriteReg(XPAR_VGA_IP_0_S00_AXI_BASEADDR, 0, 0); //turn off write
+}
+for (int x=0; x<1200; x++)
+{
+XGpio_WriteReg(XPAR_VGA_IP_0_S00_AXI_BASEADDR, 3*4 , x); //set address
+XGpio_WriteReg(XPAR_VGA_IP_0_S00_AXI_BASEADDR, 4*4 , backtilemap[x]); //set data
+
+XGpio_WriteReg(XPAR_VGA_IP_0_S00_AXI_BASEADDR, 0, weback); //write to backmap
+
+XGpio_WriteReg(XPAR_VGA_IP_0_S00_AXI_BASEADDR, 0, 0); //turn off write
+}
+for (int x=0; x<1200; x++)
+{
+
+XGpio_WriteReg(XPAR_VGA_IP_0_S00_AXI_BASEADDR, 5*4, x); //set address
+XGpio_WriteReg(XPAR_VGA_IP_0_S00_AXI_BASEADDR, 6*4 , foretilemap[x]); //set data
+
+XGpio_WriteReg(XPAR_VGA_IP_0_S00_AXI_BASEADDR, 0, wefore); //write to foremap
+
+XGpio_WriteReg(XPAR_VGA_IP_0_S00_AXI_BASEADDR, 0, 0); //turn off write
+}
+}
+
+int read_controller()
+{
+
+	int joy;
+	joy = XGpio_ReadReg(XPAR_CONTROLLER_IP_0_S00_AXI_BASEADDR, 0);
+	for(int delay = 0; delay <= 1000000; delay++){}
+
+//joystickbits 7 downto 0
+//7=a
+//6=b
+//5=start
+//4=select
+//3=up
+//2=down
+//1=left
+//0=right
+XGpio_WriteReg(XPAR_CONTROLLER_IP_0_S00_AXI_BASEADDR, 1, joy);
+	return joy;
+}
+
+// function to draw the character and enemies
+void draw_game_object(game_objects_data object[], int foretilemap[], int member){
+    int index, row, col;
+    row = object[member].upper_right_row;
+    col = object[member].upper_right_col; // moving x the center of the character or enemy and changing to column
+
+    index = 40*row + col;
+    foretilemap[index] = object[member].upper_right_sprite;
+    foretilemap[index - 1] = object[member].upper_left_sprite;
+    foretilemap[index + 40] = object[member].bottom_right_sprite;
+    foretilemap[index + 39] = object[member].bottom_left_sprite;
+
+ }
+
+// function move the character
+void move_character(game_objects_data character[], int backtilemap[], int member, int button, int collision_variable){
+
+   //if (character.facing_right == 1) {
+       if (button == right && collision_variable == 0) {
+
+           character[game_character].upper_right_col = character[game_character].upper_right_col + 1;
+
+}
+      else if (button == left && collision_variable  == 0 ){
+
+           character[game_character].upper_right_col = character[game_character].upper_right_col - 1;
+
+           }
+
+       else if (button == up &&  collision_variable == 0){
+
+           character[game_character].upper_right_row = character[game_character].upper_right_row - 2;
+           //character[game_character].jump -= 1;
+
+          }
+
+
+   //}
+
+}
+
+// function to detect collision
+int collision(game_objects_data character[], int backtilemap[], int member, int button){
+
+	if (backtilemap[40*(character[member].upper_right_row) + character[member].upper_right_col + 80] == 7){
+				    	     return 0;
+				            }
+
+	if (button == right && character[member].upper_right_col < 39) {
+	 if ((backtilemap[40*(character[member].upper_right_row)+(character[member].upper_right_col + 1)] == s3 )&
+			 (backtilemap[40*(character[member].upper_right_row)+(character[member].upper_right_col + 41)] == s3)){
+		 return 0;
+	 }
+	 /*else if (backtilemap[40*(character[member].upper_right_row)+(character[member].upper_right_col ) + 41] == s3){
+	 		return 0;
+	 	 }*/
+	}
+
+	else if (button == left && character[member].upper_right_col - 1 > 0){
+	           if ((backtilemap[40*(character[member].upper_right_row) + character[member].upper_right_col - 2] == s3 )&
+	        		   (backtilemap[40*(character[member].upper_right_row) + character[member].upper_right_col + 38] == s3)){
+	        	   return 0;
+	           }
+	           /*else if (backtilemap[40*(character[member].upper_right_row) + character[member].upper_right_col + 38] == s3){
+	           	        	   return 0;
+	           	           }*/
+	}
+
+	else if (button == up && (character[member].upper_right_row > 0 && character[member].upper_right_row < 30)){
+	    if ((backtilemap[40*(character[member].upper_right_row) + character[member].upper_right_col - 40] == s3)
+	    		& (backtilemap[40*(character[member].upper_right_row) + character[member].upper_right_col - 41] == s3)
+				&(character[member].upper_right_row > upper_limit)){
+	    	     return 0;
+	            }
+
+	}
+
+
+
+		return 1;
+}
+
+
+// gravity function
+void gravity(game_objects_data object[], int member){
+	if ((backtilemap[40*(object[member].upper_right_row) + object[member].upper_right_col + 80] == s3) &
+				(backtilemap[40*(object[member].upper_right_row) + object[member].upper_right_col + 79] == s3)){
+		object[member].upper_right_row += 1;
+			            }
+
+	else{
+		upper_limit = object[member].upper_right_row - object[member].jump;
+	}
+}
+
+void enemy_gravity(game_objects_data object[], int member){
+	if (backtilemap[40*(object[member].upper_right_row) + object[member].upper_right_col + 80] == s3){
+		object[member].upper_right_row += 1;
+			            }
+	else if(object[member].bottom_left_sprite == 19){
+	        object[bullet].upper_right_col = object[enemy1].upper_right_col;
+			object[bullet].upper_right_row = object[enemy1].upper_right_row;
+	}
+
+}
+
+int enemy_collision(game_objects_data object[], int member){
+	if (object[member].direction == 1 && object[member].upper_right_col < 39) {
+		 if (backtilemap[40*object[member].upper_right_row + object[member].upper_right_col  + 41] == s3){
+			 return 0;
+		 }
+
+	}
+	else if (object[member].direction == -1 && object[member].upper_right_col > 0){
+		           if (backtilemap[40*object[member].upper_right_row + object[member].upper_right_col + 39] == s3){
+		        	   return 0;
+		           }
+
+		}
+
+
+	return 1;
+}
+
+void move_enemy(game_objects_data object[], int member,int collision_var){
+    if (object[member].direction == 1 && collision_var == 0) {
+
+        object[member].upper_right_col = object[member].upper_right_col + 1;
+        object[member].distance += 1;
+        if (object[member].distance == object[member].range){
+        	object[member].distance = 0;
+        	object[member].direction = -1;
+        }
+
+
+}
+   else if (object[member].direction == -1 && collision_var  == 0 ){
+
+        object[member].upper_right_col = object[member].upper_right_col - 1;
+        object[member].distance += 1;
+         if (object[member].distance == object[member].range){
+                	object[member].distance = 0;
+                	object[member].direction = 1;
+                }
+   }
+   else{
+	   object[member].direction *= -1;
+   }
+
+}
+
+
+
+
+int reached_exit(game_objects_data object[], int member){
+	if (backtilemap[40*(object[member].upper_right_row)+(object[member].upper_right_col ) + 1] == 11){
+			object[member].upper_right_col -= 37;
+			return 1;
+		 }
+	return 0;
+}
+
+// function to erase objects from foretilemap
+void erase_object(game_objects_data object[], int foretilemap[], int member){
+   int row = object[member].upper_right_row;
+   int col = object[member].upper_right_col;
+
+   int index = 40*row + col;
+   foretilemap[index] = s0;
+   foretilemap[index - 1] = s0;
+   foretilemap[index + 40] = s0;
+   foretilemap[index + 39] = s0;
+}
+
+int death(game_objects_data objects[], int member,int backtilemap[], int foretilemap[]){
+
+	if (backtilemap[40*(objects[member].upper_right_row) + objects[member].upper_right_col + 80] == 7){
+		objects[member].upper_right_row = 16;
+		objects[member].upper_right_col = 7;
+		return 1;
+		}
+	else if((objects[member].upper_right_row == objects[1].upper_right_row && objects[member].upper_right_col == objects[1].upper_right_col )
+			|| (objects[member].upper_right_row == objects[1].upper_right_row && objects[member].upper_right_col  == objects[1].upper_right_col -1) )
+	     {
+		objects[member].upper_right_row = 16;
+		objects[member].upper_right_col = 7;
+		return 1;
+	     }
+	else if((objects[member].upper_right_row == objects[2].upper_right_row && objects[member].upper_right_col == objects[2].upper_right_col)
+			|| (objects[member].upper_right_row == objects[2].upper_right_row && objects[member].upper_right_col  == objects[2].upper_right_col -1) )
+	     {
+		objects[member].upper_right_row = 16;
+		objects[member].upper_right_col = 7;
+		return 1;
+	     }
+
+	else if((objects[member].upper_right_row == objects[3].upper_right_row && objects[member].upper_right_col == objects[3].upper_right_col)
+			|| (objects[member].upper_right_row == objects[3].upper_right_row && objects[member].upper_right_col  == objects[3].upper_right_col -1) )
+	     {
+		objects[member].upper_right_row = 16;
+		objects[member].upper_right_col = 7;
+		return 1;
+	     }
+	else if((objects[member].upper_right_row == objects[4].upper_right_row && objects[member].upper_right_col == objects[4].upper_right_col)
+			|| (objects[member].upper_right_row == objects[4].upper_right_row && objects[member].upper_right_col  == objects[4].upper_right_col -1) )
+	     {
+		objects[member].upper_right_row = 16;
+		objects[member].upper_right_col = 7;
+		return 1;
+	     }
+	else if((objects[member].upper_right_row == objects[5].upper_right_row && objects[member].upper_right_col == objects[5].upper_right_col)
+			|| (objects[member].upper_right_row == objects[5].upper_right_row && objects[member].upper_right_col  == objects[5].upper_right_col -1) )
+	     {
+		objects[member].upper_right_row = 16;
+		objects[member].upper_right_col = 7;
+		return 1;
+	     }
+	return 0;
+}
+
+
+
+
+
+
+int collision_variable;
+int dead;
+int collision_variable_enemy1;
+int collision_variable_enemy2;
+int collision_variable_enemy3;
+int collision_variable_boss;
+int levels = 2;
+int reached_exit_var;
+
+
+int main()
+{
+
+
+
+draw_platform_variables(0, platforms, backtilemap);
+draw_platform_variables(2, platforms, backtilemap);
+draw_platform_variables(1, platforms, foretilemap);
+move_tiles_to_fpga(spritemap, foretilemap, backtilemap);
+
+while(1)
+{
+
+
+	joy = read_controller();
+
+	erase_object(game_objects_datas, foretilemap, game_character);
+	erase_object(game_objects_datas, foretilemap, enemy1);
+	erase_object(game_objects_datas, foretilemap, enemy2);
+	erase_object(game_objects_datas, foretilemap, enemy3);
+	erase_object(game_objects_datas, foretilemap, boss);
+	erase_object(game_objects_datas, foretilemap, bullet);
+
+	reached_exit_var = reached_exit(game_objects_datas, game_character);
+	dead = death(game_objects_datas, game_character, backtilemap, foretilemap);
+
+	enemy_gravity(game_objects_datas, bullet);
+	draw_game_object(game_objects_datas, foretilemap, bullet);
+
+	collision_variable_enemy1 = enemy_collision(game_objects_datas, enemy1);
+	move_enemy(game_objects_datas, enemy1, collision_variable_enemy1 );
+	draw_game_object(game_objects_datas, foretilemap, enemy1);
+
+
+
+	collision_variable_enemy2 = enemy_collision(game_objects_datas, enemy2);
+	enemy_gravity(game_objects_datas, enemy2);
+	move_enemy(game_objects_datas, enemy2, collision_variable_enemy2);
+	draw_game_object(game_objects_datas, foretilemap, enemy2);
+
+	collision_variable_enemy3 = enemy_collision(game_objects_datas, enemy3);
+       enemy_gravity(game_objects_datas, enemy3);
+	draw_game_object(game_objects_datas, foretilemap, enemy3);
+
+	if (levels == 7){
+		collision_variable_boss = enemy_collision(game_objects_datas, boss);
+		enemy_gravity(game_objects_datas, boss);
+		move_enemy(game_objects_datas, boss, collision_variable_boss);
+		draw_game_object(game_objects_datas, foretilemap, boss);
+	}
+
+
+
+	collision_variable = collision(game_objects_datas, backtilemap, game_character, joy);
+	gravity(game_objects_datas, game_character);
+	move_character(game_objects_datas, backtilemap, game_character, joy, collision_variable);
+	draw_game_object(game_objects_datas, foretilemap, game_character);
+	move_tiles_to_fpga(spritemap, foretilemap, backtilemap);
+
+
+
+
+
+	if (dead == 1){
+		levels = 2;
+		//erase_object(game_objects_datas, foretilemap, game_character);
+		draw_platform_variables(0, platforms, backtilemap);
+		draw_platform_variables(1, platforms, foretilemap);
+		draw_platform_variables(levels, platforms, backtilemap);
+		move_tiles_to_fpga(spritemap, foretilemap, backtilemap);
+
+
+	}
+
+	if (reached_exit_var == 1){
+		levels++;
+		draw_platform_variables(1, platforms, foretilemap);
+		draw_platform_variables(0, platforms, backtilemap);
+		draw_platform_variables(levels, platforms, backtilemap);
+		move_tiles_to_fpga(spritemap, foretilemap, backtilemap);
+		game_objects_datas[2].upper_right_row = 4;
+		game_objects_datas[2].upper_right_col = 10;
+		game_objects_datas[1].upper_right_col += 2;
+		game_objects_datas[1].upper_right_row += 2;
+		game_objects_datas[2].upper_right_col += 3;
+		game_objects_datas[2].upper_right_row -= 3;
+		game_objects_datas[1].range += 2;
+		game_objects_datas[2].range += 2;
+		game_objects_datas[3].upper_right_col += 2;
+		game_objects_datas[3].upper_right_row = 2;
+
+
+
+	}
+
+
+
+}
+cleanup_platform();
+return 0;
+}
